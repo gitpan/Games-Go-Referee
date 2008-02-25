@@ -7,7 +7,7 @@ use Games::Go::Referee::Node;
 use IO::File;
 use English qw(-no_match_vars);  # Avoids regex performance penalty
 use Carp;
-our $VERSION = 0.01;
+our $VERSION = 0.02;
 
 sub new {
   my $this = shift;
@@ -896,6 +896,9 @@ sub tosgf {
 }
 
 sub offboard {
+print '['.$_[0].']'."\n";
+print '['.$_[1].']'."\n";
+print '['.$_[2].']'."\n";
   0 > $_[1] or $_[1] > $_[0] or 0 > $_[2] or $_[2] > $_[0];
 }
 
