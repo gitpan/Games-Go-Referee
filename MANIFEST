@@ -1,0 +1,8 @@
+Changes
+Makefile.PL
+MANIFEST
+README
+t/Games-Go-Referee.t
+lib/Games/Go/Referee.pm
+lib/Games/Go/Referee/Node.pm
+META.yml                                 Module meta-data (added by MakeMaker)
