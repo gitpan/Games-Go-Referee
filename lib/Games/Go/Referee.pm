@@ -4,10 +4,9 @@ use strict;
 use warnings;
 use Games::Go::SGF;
 use Games::Go::Referee::Node;
-use IO::File;
 use English qw(-no_match_vars);  # Avoids regex performance penalty
 use Carp;
-our $VERSION = 0.02;
+our $VERSION = 0.04;
 
 sub new {
   my $this = shift;
@@ -46,14 +45,7 @@ sub new {
 
 sub sgffile{
   my ($self, $sgf_file, $grammarflag) = @_;
-  my $sgfdata;
-  my $fh = IO::File->new($sgf_file, '<') or croak $ERRNO;
-  {
-    local $INPUT_RECORD_SEPARATOR = undef; # enable localized slurp mode
-    $sgfdata = <$fh>;
-  }
-  $fh->close or croak $ERRNO;
-  my $sgf = new Games::Go::SGF($sgfdata, $grammarflag);
+  my $sgf = new Games::Go::SGF($sgf_file, $grammarflag);
   defined $sgf or croak "Bad Go sgf";
   restart($self);
   size($self, $sgf->SZ, 1);
@@ -112,10 +104,9 @@ sub _iterboard (&$) {
 
 sub size {
   my ($self, $size, $flag) = @_;
-  $size = 19 if $flag; # set size to 18 if SZ missing from sgf file
   my $adjust = 1;
   if ($size) {
-    _numbersetting($self, $size, 'size', $adjust);
+    $self->{_const}{size} = _numbersetting($self, $size, 'size', $adjust);
     clearboard($self);
     $self->{_node}{0}->board(store($self));
   }
@@ -126,15 +117,30 @@ sub gtpclearboard { restore(shift, 0) }
 
 sub ruleset { &initrules }
 
-sub ssk { _rulesetting('ssk', @_) }
+sub ssk { 
+  my $self = shift;
+  $self->{_const}{ssk}         = _rulesetting($self, 'ssk', @_) 
+}
 
-sub alternation { _rulesetting('alternation', @_) }
+sub alternation { 
+  my $self = shift;
+  $self->{_const}{alternation} = _rulesetting($self, 'alternation', @_)
+}
 
-sub selfcapture { _rulesetting('selfcapture', @_) }
+sub selfcapture { 
+  my $self = shift;
+  $self->{_const}{selfcapture} = _rulesetting($self, 'selfcapture', @_)
+}
 
-sub exitonerror { _rulesetting('exitonerror', @_) }
-
-sub passes { _numbersetting(@_, 'passes', 0) }
+sub exitonerror { 
+  my $self = shift;
+  $self->{_const}{exitonerror} = _rulesetting($self, 'exitonerror', @_) 
+}
+  
+sub passes { 
+  my $self = shift;  
+  $self->{_const}{passes}      = _numbersetting($self, @_, 'passes', 0) 
+}
 
 sub pointformat {
   my $self = shift;
@@ -160,8 +166,9 @@ sub _numbersetting {
 }
 
 sub _rulesetting {
-  my $rule = shift;
   my $self = shift;
+  my $rule = shift;
+
   if (@_) {
     my $switch = shift;
     while ($switch) {
@@ -558,6 +565,10 @@ sub processmove{
         $self->{_boardstr}{$$board} = $colour;
       }
       $$noderef->board($board); # store the board in a Node as a string
+for (0..8) { print substr ( $$board, $_*9, 9 );
+             print "\n";
+           };
+print "\n";
     }
   }
   return 1
@@ -896,9 +907,6 @@ sub tosgf {
 }
 
 sub offboard {
-print '['.$_[0].']'."\n";
-print '['.$_[1].']'."\n";
-print '['.$_[2].']'."\n";
   0 > $_[1] or $_[1] > $_[0] or 0 > $_[2] or $_[2] > $_[0];
 }
 
@@ -914,15 +922,6 @@ sub aZnoi {
   return $str
 }
 
-# don't the show the deep recursion warnings
-# that are generated if groups of >100 stones are
-# very short of liberties.
-# the actual value depends on your system
-
-BEGIN {
-  $SIG{__WARN__} = sub {warn @_ unless $_[0] =~ m/Deep recursion/o}
-}
-
 1;
 
 =head1 NAME
@@ -934,7 +933,7 @@ Games::Go::Referee - Check the moves of a game of Go for rule violations.
 Analyse a file:
 
   use Games::Go::Referee;
-  my $referee = new Referee();
+  my $referee = new Games::Go::Referee();
   $referee->sgffile('file.sgf');
   print $referee->errors;
 
@@ -943,7 +942,7 @@ or
 Analyse move by move:
 
   use Games::Go::Referee;
-  my $referee = new Referee();
+  my $referee = new Games::Go::Referee();
   $referee->size(19);
   $referee->ruleset('AGA');
   $referee->play('B','ab');
