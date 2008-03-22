@@ -6,7 +6,7 @@ use Games::Go::SGF;
 use Games::Go::Referee::Node;
 use English qw(-no_match_vars);  # Avoids regex performance penalty
 use Carp;
-our $VERSION = 0.04;
+our $VERSION = 0.05;
 
 sub new {
   my $this = shift;
@@ -565,10 +565,6 @@ sub processmove{
         $self->{_boardstr}{$$board} = $colour;
       }
       $$noderef->board($board); # store the board in a Node as a string
-for (0..8) { print substr ( $$board, $_*9, 9 );
-             print "\n";
-           };
-print "\n";
     }
   }
   return 1
