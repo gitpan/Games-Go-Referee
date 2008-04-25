@@ -6,7 +6,7 @@ use Games::Go::SGF;
 use Games::Go::Referee::Node;
 use English qw(-no_match_vars);  # Avoids regex performance penalty
 use Carp;
-our $VERSION = 0.05;
+our $VERSION = 0.06;
 
 sub new {
   my $this = shift;
@@ -39,7 +39,7 @@ sub new {
   bless $self, $class;
   $self->{_node}{0} = makenode($self, $self->{_colour});
   $self->{_cellfarm}{','} = ''; # pass is empty
-  size($self, $self->{_const}{size});
+  $self->{_debug}       = 0;
   return $self;
 }
 
@@ -108,7 +108,6 @@ sub size {
   if ($size) {
     $self->{_const}{size} = _numbersetting($self, $size, 'size', $adjust);
     clearboard($self);
-    $self->{_node}{0}->board(store($self));
   }
   return $self->{_const}{size}
 }
@@ -117,29 +116,41 @@ sub gtpclearboard { restore(shift, 0) }
 
 sub ruleset { &initrules }
 
+sub debug {
+  my $self = shift;
+  my $debug = shift;
+  $self->{_debug} = $debug if defined $debug and $debug =~ /0|1/;
+  return $self->{_debug}
+}
+
 sub ssk { 
   my $self = shift;
-  $self->{_const}{ssk}         = _rulesetting($self, 'ssk', @_) 
+  $self->{_const}{ssk}         = _rulesetting($self, 'ssk', @_);
+  return $self->{_const}{ssk}
 }
 
 sub alternation { 
   my $self = shift;
-  $self->{_const}{alternation} = _rulesetting($self, 'alternation', @_)
+  $self->{_const}{alternation} = _rulesetting($self, 'alternation', @_);
+  return $self->{_const}{alternation}
 }
 
 sub selfcapture { 
   my $self = shift;
-  $self->{_const}{selfcapture} = _rulesetting($self, 'selfcapture', @_)
+  $self->{_const}{selfcapture} = _rulesetting($self, 'selfcapture', @_);
+  return $self->{_const}{selfcapture}
 }
 
 sub exitonerror { 
   my $self = shift;
-  $self->{_const}{exitonerror} = _rulesetting($self, 'exitonerror', @_) 
+  $self->{_const}{exitonerror} = _rulesetting($self, 'exitonerror', @_);
+  return $self->{_const}{exitonerror}
 }
   
 sub passes { 
   my $self = shift;  
-  $self->{_const}{passes}      = _numbersetting($self, @_, 'passes', 0) 
+  $self->{_const}{passes}      = _numbersetting($self, @_, 'passes', 0);
+  return $self->{_const}{passes}
 }
 
 sub pointformat {
@@ -171,7 +182,7 @@ sub _rulesetting {
 
   if (@_) {
     my $switch = shift;
-    while ($switch) {
+    for ($switch) {
       if ($switch eq 'on') {
         $self->{_const}{$rule} = 1;
         last;
@@ -232,13 +243,14 @@ sub handicap {
   return errorcode($self);
 }
 
-# return a true if a co-ordinate pair represents a legal move
+# return true if a co-ordinate pair is a legal move
 
 sub islegal {
   my ($self, $colour, $point) = @_;
   my $res = play($self, $colour, $point);
+  myprint ($colour, $point, 'has legality:', $res) if $self->{_debug};
   restore($self, -1);
-  return not $res
+  return $res?0:1
 }
 
 # return a list of the co-ordinates of all legal moves
@@ -341,6 +353,7 @@ sub showboard{
     $h .= $self->{_cellfarm}{$x.','.$y};
     $h .= "\n" if $x == $size;
   } $size;
+  $h .= "\n";
   return $h;
 }
 
@@ -386,6 +399,7 @@ sub getmove {
 
 sub boardrestore{
   my ($self, $id) = @_;
+  myprint('Restoring to', $id) if $self->{_debug};
   my $positionref = $self->{_node}{$id}->board;
   my $size = $self->{_const}{size};
   _iterboard {
@@ -534,7 +548,6 @@ sub processmove{
     }
     $self->{_passcount} = 0;
     $$noderef->passcount(0);
-#myprint('Passcount set to', $self->{_passcount});
     my ($x, $y) = extractpoints($self, $ab);
     if (offboard($size, $x, $y)) {
       adderror($self, 1, $move);
@@ -565,6 +578,8 @@ sub processmove{
         $self->{_boardstr}{$$board} = $colour;
       }
       $$noderef->board($board); # store the board in a Node as a string
+      myprint('Node id', $id)  if $self->{_debug};      
+      myprint(showboard($self)) if $self->{_debug};
     }
   }
   return 1
@@ -817,6 +832,7 @@ sub clearboard{
 
 sub checkmove { # check move is OK according to format
   my ($self, $string) = @_;
+  myprint ('Checking move', $string) if $self->{_debug};
   return 1 if ispass($self, $string);
   if ($self->{_const}{pointformat} eq 'sgf') {
     return issgf($string)
@@ -916,6 +932,15 @@ sub aZnoi {
   my $str = aZ();
   $str =~ s/i//;
   return $str
+}
+
+sub myprint {
+  my @messages = @_;
+  if (exists $messages[0]) {
+  	open(LOG, ">>",'./refereelogfile.txt') or die 'Can\'t open'."\n";
+	  	print LOG (join ' ', @messages, "\n");
+  	close(LOG);
+  }
 }
 
 1;
