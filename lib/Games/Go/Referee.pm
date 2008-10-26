@@ -6,7 +6,7 @@ use Games::Go::SGF;
 use Games::Go::Referee::Node;
 use English qw(-no_match_vars);  # Avoids regex performance penalty
 use Carp;
-our $VERSION = 0.06;
+our $VERSION = 0.07;
 
 sub new {
   my $this = shift;
@@ -643,12 +643,33 @@ sub processtags {
       next;
     }
     if (',AB,AW,AE,' =~ /,($_),/) {
-      for (split (',', $sgfnode->$1)) { changecell($self, $1, $_) }
+      my $tag = $1;
+      for (split (',', $sgfnode->$tag)) {
+        if ( $_ =~ /(..):(..)/) {
+          my $arrayref = generaterectangle($self, $1, $2);
+          for (@$arrayref) {changecell($self, $tag, $_)};
+        } else {
+          changecell($self, $tag, $_);
+        }
+      }
       next;
     }
   }
 
   return 1
+}
+
+sub generaterectangle {
+  my ($self, $topleft, $bottomright) = @_;
+  my @pointlist;
+  my ($tx, $ty) = extractpoints($self, $topleft);
+  my ($bx, $by) = extractpoints($self, $bottomright);
+  for my $x ($tx..$bx) {
+    for my $y ($ty..$by) {
+      push @pointlist, insertpoints($self, $x, $y);
+    }
+  }
+  return \@pointlist;
 }
 
 # list all the stones of a particular colour
