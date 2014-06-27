@@ -7,11 +7,13 @@ WriteMakefile(
     VERSION_FROM      => 'lib/Games/Go/Referee.pm', # finds $VERSION
     PREREQ_PM         => {
 			 Games::Go::SGF => 0,
+       Test::More   => 0,
 			 IO::File 	=> 0,
 			 English	=> 0,
 			 Carp		=> 0,
-}, # e.g., Module::Name => 1.1
+},
     ($] >= 5.005 ?     ## Add these new keywords supported since 5.005
       (ABSTRACT_FROM  => 'lib/Games/Go/Referee.pm', # retrieve abstract from module
-       AUTHOR         => 'Daniel Gilder <dan@>') : ()),
+       AUTHOR         => 'Daniel Gilder <deg@cpan.org>') : ()),
 );
+

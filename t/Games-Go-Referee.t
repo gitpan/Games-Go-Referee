@@ -1,15 +1,33 @@
-# Before `make install' is performed this script should be runnable with
-# `make test'. After `make install' it should work as `perl Games-Go-Referee.t'
+#########################
+
+use Test::More tests => 7;
+BEGIN { 
+  use_ok('Games::Go::Referee');
+  use_ok('Games::Go::SGF');
+};
 
 #########################
 
-# change 'tests => 1' to 'tests => last_test_to_print';
-
-use Test::More tests => 1;
-BEGIN { use_ok('Games::Go::Referee') };
-
-#########################
-
-# Insert your test code below, the Test::More module is use()ed here so read
-# its man page ( perldoc Test::More ) for help writing this test script.
+my $expected = ( 
+'Illegal self-capture at move 1
+Play over at move 11
+Alternation error at move 12
+Alternation error at move 16
+Illegal self-capture at move 18
+Board repetition at move 29
+Illegal self-capture at move 30
+Board repetition at move 30
+Board repetition at move 55
+');
+my $referee = Games::Go::Referee->new;         # create an object
+ok( defined $referee );                        # check that we got something
+ok( $referee->isa('Games::Go::Referee') );     # and it's the right class
+ok( $referee->pointformat('sgf') eq 'sgf' );   # check pointformat
+$referee->sgffile('./sgf/test.sgf');
+my $answer = join( '', $referee->errors ) ;
+ok( $answer eq $expected );
+my $sgf = new Games::Go::SGF('./sgf/test.sgf');
+$referee->sgffile($sgf);
+$answer = join( '', $referee->errors ) ;
+ok( $answer eq $expected );
 

@@ -6,7 +6,7 @@ use Games::Go::SGF;
 use Games::Go::Referee::Node;
 use English qw(-no_match_vars);  # Avoids regex performance penalty
 use Carp;
-our $VERSION = 0.07;
+our $VERSION = 0.08;
 
 sub new {
   my $this = shift;
@@ -36,19 +36,25 @@ sub new {
   $self->{_prisonersW}  = 0;
   $self->{_sgf}         = {}; # refererence to sgf file
   $self->{_coderef}     = undef;
-  bless $self, $class;
-  $self->{_node}{0} = makenode($self, $self->{_colour});
   $self->{_cellfarm}{','} = ''; # pass is empty
   $self->{_debug}       = 0;
+  $self->{_logfile}     = './refereelog.txt';
+  bless $self, $class;
+  $self->{_node}{0}     = makenode($self, $self->{_colour});
   return $self;
 }
 
 sub sgffile{
-  my ($self, $sgf_file, $grammarflag) = @_;
-  my $sgf = new Games::Go::SGF($sgf_file, $grammarflag);
-  defined $sgf or croak "Bad Go sgf";
+  my ($self, $sgf_file, $p1, $p2) = @_;
+  my $sgf;  
+  if (ref($sgf_file) eq 'Games::Go::SGF') {
+    $sgf = $sgf_file;
+  } else {  
+    $sgf = new Games::Go::SGF($sgf_file, $p1, $p2);
+    defined $sgf or croak "Bad Go sgf";
+  }
   restart($self);
-  size($self, $sgf->SZ, 1);
+  size($self, $sgf->SZ);
   initrules($self, $sgf->RU);
   $self->{_sgf} = $sgf;
   $self->{_const}{handicap} = $sgf->HA if $sgf->HA;
@@ -103,16 +109,13 @@ sub _iterboard (&$) {
 }
 
 sub size {
-  my ($self, $size, $flag) = @_;
+  my ($self, $size) = @_;
   my $adjust = 1;
-  if ($size) {
-    $self->{_const}{size} = _numbersetting($self, $size, 'size', $adjust);
-    clearboard($self);
-  }
+  $size ||= 19;
+  $self->{_const}{size} = _numbersetting($self, $size, 'size', $adjust);
+  clearboard($self);
   return $self->{_const}{size}
 }
-
-sub gtpclearboard { restore(shift, 0) }
 
 sub ruleset { &initrules }
 
@@ -121,6 +124,13 @@ sub debug {
   my $debug = shift;
   $self->{_debug} = $debug if defined $debug and $debug =~ /0|1/;
   return $self->{_debug}
+}
+
+sub logfile {
+  my $self = shift;
+  my $logfile = shift;
+  $self->{_logfile} = $logfile if defined $logfile;
+  return $self->{_logfile}
 }
 
 sub ssk { 
@@ -157,7 +167,7 @@ sub pointformat {
   my $self = shift;
   if (@_) {
     my $format = shift ;
-    if ($format eq 'sgf' or $format eq 'gmp') {
+    if ($format eq 'sgf' or $format eq 'gtp') {
       $self->{_const}{pointformat} = $format;
     } else {
       croak 'Illegal value ', $format if defined $format;
@@ -248,7 +258,7 @@ sub handicap {
 sub islegal {
   my ($self, $colour, $point) = @_;
   my $res = play($self, $colour, $point);
-  myprint ($colour, $point, 'has legality:', $res) if $self->{_debug};
+  myprint ($self, $colour, $point, 'has legality:', $res) if $self->{_debug};
   restore($self, -1);
   return $res?0:1
 }
@@ -399,7 +409,7 @@ sub getmove {
 
 sub boardrestore{
   my ($self, $id) = @_;
-  myprint('Restoring to', $id) if $self->{_debug};
+  myprint ($self, 'Restoring to', $id) if $self->{_debug};
   my $positionref = $self->{_node}{$id}->board;
   my $size = $self->{_const}{size};
   _iterboard {
@@ -426,7 +436,7 @@ sub store{
   my $h = '';
   _iterboard {
     my ($x, $y) = @_;
-    die 'Undefined Value' unless defined $self->{_cellfarm}{$x.','.$y};
+    die 'Undefined Value'."$!\n" unless defined $self->{_cellfarm}{$x.','.$y};
     $h .= $self->{_cellfarm}{$x.','.$y};
   } $self->{_const}{size};
   return \$h;
@@ -435,11 +445,11 @@ sub store{
 # Change the value of a cell
 
 sub put_cell{
-  my ($self, $x, $y, $c) = @_;
-  if ($c ne '.' and $self->{_cellfarm}{$x.','.$y} ne '.'){
+  my ($self, $where, $what) = @_;
+  if ($what ne '.' and $self->{_cellfarm}{$where} ne '.'){
     return 1
   } else {
-    $self->{_cellfarm}{$x.','.$y} = $c;
+    $self->{_cellfarm}{$where} = $what;
     return 0
   }
 }
@@ -447,7 +457,7 @@ sub put_cell{
 sub delete_group{
   my ($self, @mygroup) = @_;
   for (0..$#mygroup) {
-    put_cell($self, $mygroup[$_][0], $mygroup[$_][1], '.');
+    put_cell($self, $mygroup[$_][0].','.$mygroup[$_][1], '.');
   }
 }
 
@@ -456,15 +466,15 @@ sub delete_group{
 sub block{
   my ($self, $x, $y, $c, $group) = @_;
   unless (offboard($self->{_const}{size}, $x, $y)) {
-    my $cellcontents = $self->{_cellfarm}{$x.','.$y};
-    if ($cellcontents eq $c) {
-      $$group{$x.','.$y} = undef;
+    my $key = "$x,$y";
+    if ($self->{_cellfarm}{$key} eq $c) {
+      $group->{$key} = undef; # create a hash key
       my @directions = ([1,0],[0,1],[-1,0],[0,-1]);
 
       for (0..3) {
         my $xx = $directions[$_][0] + $x;
         my $yy = $directions[$_][1] + $y;
-        unless (exists($$group{$xx.','.$yy})) {
+        unless (exists($group->{"$xx,$yy"})) {
           $group = block($self, $xx, $yy, $c, $group);
         }
       }
@@ -477,15 +487,16 @@ sub block{
 sub libertycheck{
   my ($self, $x, $y, $c, $haslibs, $group) = @_;
   unless ($haslibs or offboard($self->{_const}{size}, $x, $y)) {
-    my $cellcontents = $self->{_cellfarm}{$x.','.$y};
+    my $key = "$x,$y";
+    my $cellcontents = $self->{_cellfarm}{$key};
     if ($cellcontents eq $c) {
-      $$group{$x.','.$y} = undef;
+      $group->{$key} = undef;
       my @directions = ([1,0],[0,1],[-1,0],[0,-1]);
 
       for (0..3) {
         my $xx = $directions[$_][0] + $x;
         my $yy = $directions[$_][1] + $y;
-        unless (exists($$group{$xx.','.$yy})) {
+        unless (exists($group->{"$xx,$yy"})) {
           ($haslibs, $group) = libertycheck($self, $xx, $yy, $c, $haslibs, $group);
         }
       }
@@ -528,6 +539,7 @@ sub processmove{
   my $move = $self->{_movecount};
   if (defined $self->{_coderef}) {
     my $rank = $colour.'R';
+    myprint ($self, 'learning from move', $id)  if $self->{_debug};
     $self->{_coderef}->learn($colour, $ab, $self, $move, $self->{_sgf}->$rank);
   }
   if ($colour eq $self->{_colour} and $self->{_const}{alternation}){
@@ -553,7 +565,7 @@ sub processmove{
       adderror($self, 1, $move);
       return if $self->{_const}{exitonerror};
     } else {
-      if (put_cell($self, $x, $y, $c)) {
+      if (put_cell($self, "$x,$y", $c)) {
         adderror($self, 2, $move);
         return if $self->{_const}{exitonerror};
       }
@@ -578,8 +590,8 @@ sub processmove{
         $self->{_boardstr}{$$board} = $colour;
       }
       $$noderef->board($board); # store the board in a Node as a string
-      myprint('Node id', $id)  if $self->{_debug};      
-      myprint(showboard($self)) if $self->{_debug};
+      myprint ($self, 'Node id', $id)  if $self->{_debug};      
+      myprint ($self, showboard($self)) if $self->{_debug};
     }
   }
   return 1
@@ -602,7 +614,7 @@ sub changecell{
   if (offboard($size, $x, $y)) {
     adderror($self, 9, $id);
   } else {
-    adderror($self, 4, $id) if (put_cell($self, $x, $y, $c));
+    adderror($self, 4, $id) if (put_cell($self, "$x,$y", $c));
     unless ($c eq '.'){
       my ($capturedSomething, undef) = checkbothcaptures($self, $x, $y, $c, 0);
       if ($capturedSomething) {
@@ -634,8 +646,7 @@ sub move {
 
 sub processtags {
   my ($self, $sgfnode) = @_;
-  my $colour = ($sgfnode->PL) ? $sgfnode->PL : $sgfnode->colour;
-  $self->{_node}{++$self->{_nodecount}} = makenode($self, $colour, $sgfnode->move);
+  $self->{_node}{++$self->{_nodecount}} = makenode($self, $sgfnode->colour, $sgfnode->move);
 
   for (split (',',$sgfnode->tags)){
     if (($_ eq 'B') or ($_ eq 'W')) {
@@ -853,7 +864,7 @@ sub clearboard{
 
 sub checkmove { # check move is OK according to format
   my ($self, $string) = @_;
-  myprint ('Checking move', $string) if $self->{_debug};
+  myprint ($self, 'Checking move', $string) if $self->{_debug};
   return 1 if ispass($self, $string);
   if ($self->{_const}{pointformat} eq 'sgf') {
     return issgf($string)
@@ -901,7 +912,7 @@ sub extractpoints { # convert points from an sgf or gmp string to a pair of numb
   if ($self->{_const}{pointformat} eq 'sgf') {
     return fromsgf($string, $pass)
   } else {
-    return fromgmp($self, $string)
+    return fromgtp($self, $string)
   }
 }
 
@@ -910,7 +921,7 @@ sub insertpoints { # convert a pair of numbers to an sgf or gmp string
   if ($self->{_const}{pointformat} eq 'sgf') {
     return tosgf($x, $y)
   } else {
-    return togmp($self, $x, $y)
+    return togtp($self, $x, $y)
   }
 }
 
@@ -921,14 +932,14 @@ sub fromsgf {
   return $x,$y;
 }
 
-sub fromgmp {
+sub fromgtp {
   my ($self, $string) = @_;
   my $a = index aZnoi(), lc substr $string, 0, 1;
   my $y = substr $string, 1;
   return $a, $self->{_const}{size} - $y + 1;
 }
 
-sub togmp {
+sub togtp {
   my ($self, $x, $y) = @_;
   return 'pass' if $x eq '' and $y eq '';
   join '', uc(substr(aZnoi(), $x, 1)), $self->{_const}{size} - $y + 1
@@ -956,11 +967,12 @@ sub aZnoi {
 }
 
 sub myprint {
+  my $self = shift;
   my @messages = @_;
   if (exists $messages[0]) {
-  	open(LOG, ">>",'./refereelogfile.txt') or die 'Can\'t open'."\n";
-	  	print LOG (join ' ', @messages, "\n");
-  	close(LOG);
+	  open(LOG, ">>", $self->{_logfile}) or die 'Can\'t open'.$self->{_logfile}."\n";
+		  print LOG (join ' ', @messages, "\n");
+	  close(LOG);
   }
 }
 
@@ -1154,6 +1166,11 @@ move/setup.
 
   $referee->sgffile('file.sgf');
 
+or
+
+  my $sgf = new Games::Go::SGF('file.sgf');
+  $referee->sgffile($sgf);
+
 Specify an sgf file to be analysed.
 
 =head1 TODO
@@ -1162,6 +1179,7 @@ Score?
 
 =head1 BUGS/CAVEATS
 
+The move number of a reported error is one too large if it occurs in a variation.
 Putting setup stones within a file (not just the first node) can cause problems. For example,
 after some stones have been added like this, who is next to play? This needs to be known for
 situational superko. Currently no look-ahead is done to see who, in fact, played next.
@@ -1172,11 +1190,6 @@ Ko-pass moves, game resumption ... my head hurts.
 
 =head1 AUTHOR (version 0.01)
 
-Daniel Gilder
-
-=head1 THANKS
-
-To Dmitry Mayorov, as some functions, notably group_iterator and checkforcapture are
-adapted from his original javascript.
+DG
 
 =cut
