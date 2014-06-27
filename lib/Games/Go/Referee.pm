@@ -6,7 +6,7 @@ use Games::Go::SGF;
 use Games::Go::Referee::Node;
 use English qw(-no_match_vars);  # Avoids regex performance penalty
 use Carp;
-our $VERSION = 0.09;
+our $VERSION = 0.10;
 
 sub new {
   my $this = shift;
